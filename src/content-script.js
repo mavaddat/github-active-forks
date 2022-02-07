@@ -44,9 +44,9 @@ if (sidepanel != null) {
     }
   );
 
-  function getRepositoryForks(repo, onSuccess, onFail) {
+  function getRepositoryForks(repoIn, onSuccess, onFail) {
     fetch(
-      `https://api.github.com/repos/${repo}/forks?sort=stargazers&per_page=100`
+      `https://api.github.com/repos/${repoIn}/forks?sort=stargazers&per_page=100`
     )
       .then((res) => {
         if (!res.ok) {
@@ -75,13 +75,13 @@ if (sidepanel != null) {
       });
   }
 
-  function displayError(msg, activeForksContainer) {
-    removeAllChildNodes(activeForksContainer);
-    activeForksContainer.insertAdjacentHTML("beforeend", getHtmlForError(msg));
+  function displayError(msg, activeForksContainerIn) {
+    removeAllChildNodes(activeForksContainerIn);
+    activeForksContainerIn.insertAdjacentHTML("beforeend", getHtmlForError(msg));
   }
 
-  function displayForks(display_count, sort_mode, forks, activeForksContainer) {
-    removeAllChildNodes(activeForksContainer);
+  function displayForks(display_count, sort_mode, forks, activeForksContainerIn) {
+    removeAllChildNodes(activeForksContainerIn);
     let forks_to_display = forks.slice(0, display_count);
     // TODO sort
     if (sort_mode == "last_commit" || sort_mode == "forks") {

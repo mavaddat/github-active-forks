@@ -1,0 +1,139 @@
+env:
+  EXT_DIR: src
+  PUBLIC_KEY_BASE64: ${{ secrets.PUBLIC_KEY_BASE64 }}
+
+name: Chrome extension packing
+defaults:
+  run:
+    shell: bash
+    working-directory: $GITHUB_WORKSPACE
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  schedule:
+    - cron: '31 13 * * 3'
+
+  workflow_dispatch:
+    refs:
+      - heads/master
+jobs:
+  Version:
+    outputs:
+      created: ${{ steps.daily-version.outputs.created }}
+      version: ${{ steps.daily-version.outputs.version }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 20
+      - name: install
+        run: npm ci || npm install
+      - run: npm test
+      - uses: fregante/daily-version-action@v1
+        name: Create tag if necessary
+        id: daily-version
+      - uses: fregante/release-with-changelog@v3
+        if: steps.daily-version.outputs.created
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          exclude: true
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/cache@v2
+        id: cache-id
+        with:
+          path: $GITHUB_WORKSPACE
+          key: $GITHUB_SHA
+          node-version: 'lts/*'
+          cache: npm
+          cache-dependency-path: "${GITHUB_WORKSPACE}/package-lock.json"
+      - run: npm ci || npm install
+      - run: npm test
+      - uses: airvzxf/cache-anything-new-action@v1.0.1
+        with: # See https://askubuntu.com/questions/1063331/how-to-install-google-chrome-extensions-though-terminal
+          script: |
+            #!/bin/bash
+            echo "installing chrome"
+            wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor > /tmp/gpg.key && mv /tmp/gpg.key /etc/apt/trusted.gpg.d/chrome.gpg
+            VM_ARCH=$(dpkg --print-architecture)
+            echo "deb [arch=$VM_ARCH] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list
+            apt update && apt upgrade -y
+            apt install -y google-chrome-stable
+            echo "installing chrome-webstore-upload-cli"
+            npm install -g chrome-webstore-upload-cli
+          is_cached: ${{ steps.cache-id.outputs.cache-hit }}
+          snapshot: '/'
+          exclude: '/boot /data /dev /mnt /proc /run /sys'
+      - name: Package Chrome Extension # See http://www.dre.vanderbilt.edu/~schmidt/android/android-4.0/external/chromium/chrome/common/extensions/docs/crx.html
+        run: |
+          PK_PREFIX=/tmp/${EXT_DIR}
+          crx="${PK_PREFIX}.crx"
+          pub="${PK_PREFIX}.pub"
+          sig="${PK_PREFIX}.sig"
+          zip="${PK_PREFIX}.zip"
+          trap 'rm -f "$pub" "$sig" "$zip"' EXIT
+          echo ${{ env.PUBLIC_KEY_BASE64 }} | base64 --decode > $pub
+          # zip up the crx dir
+          cwd=$(pwd -P)
+          (cd "$EXT_DIR" && zip -qr -9 -X "$cwd/$zip" .)
+
+          # signature
+          openssl sha1 -sha1 -binary -sign "$key" < "$zip" > "$sig"
+
+          # public key
+          openssl rsa -pubout -outform DER < "$key" > "$pub" 2>/dev/null
+
+          byte_swap () {
+            # Take "abcdefgh" and return it as "ghefcdab"
+            echo "${1:6:2}${1:4:2}${1:2:2}${1:0:2}"
+          }
+
+          crmagic_hex="4372 3234" # Cr24
+          version_hex="0200 0000" # 2
+          pub_len_hex=$(byte_swap $(printf '%08x\n' $(ls -l "$pub" | awk '{print $5}')))
+          sig_len_hex=$(byte_swap $(printf '%08x\n' $(ls -l "$sig" | awk '{print $5}')))
+          (
+            echo "$crmagic_hex $version_hex $pub_len_hex $sig_len_hex" | xxd -r -p
+            cat "$pub" "$sig" "$zip"
+          ) > "$crx"
+          echo "Wrote '$crx'"
+          export CRX_PATH=$crx
+  Submit:
+    needs: Version
+    if: github.event_name == 'workflow_dispatch' || needs.Version.outputs.created
+    strategy:
+      fail-fast: false
+      matrix:
+        command:
+          - firefox
+          - chrome
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: install
+        run: npm ci || npm install
+      - run: npm run build --if-present
+      - name: Update extension’s meta
+        run: npx dot-json@1 $EXT_DIR/manifest.json version ${{ needs.Version.outputs.version }}
+      - name: Submit
+        run: |
+          case ${{ matrix.command }} in
+            chrome)
+              cd $EXT_DIR && npx chrome-webstore-upload-cli@2 upload --auto-publish
+              ;;
+            firefox)
+              cd $EXT_DIR && npx web-ext-submit@6
+              ;;
+          esac
+        env:
+          EXTENSION_ID: ${{ secrets.EXTENSION_ID }}
+          CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
+          WEB_EXT_API_KEY: ${{ secrets.WEB_EXT_API_KEY }}
+          WEB_EXT_API_SECRET: ${{ secrets.WEB_EXT_API_SECRET }}
