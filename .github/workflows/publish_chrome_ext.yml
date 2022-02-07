@@ -6,19 +6,16 @@ name: Chrome extension packing
 defaults:
   run:
     shell: bash
-    working-directory: "$GITHUB_WORKSPACE"
+    working-directory: ${{ EXT_DIR }}
 
 on:
   push:
     branches: [ master ]
   pull_request:
     branches: [ master ]
-  schedule:
+  schedule
     - cron: '31 13 * * 3'
 
-  workflow_dispatch:
-    refs:
-      - heads/master
 jobs:
   Version:
     outputs:
@@ -48,8 +45,8 @@ jobs:
       - uses: actions/cache@v2
         id: cache-id
         with:
-          path: "$GITHUB_WORKSPACE"
-          key: "$GITHUB_SHA"
+          path: ${{ EXT_DIR }}
+          key: ${{ GITHUB_SHA }}
           node-version: 'lts/*'
           cache: npm
           cache-dependency-path: "${GITHUB_WORKSPACE}/package-lock.json"
