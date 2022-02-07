@@ -6,7 +6,7 @@ name: Chrome extension packing
 defaults:
   run:
     shell: bash
-    working-directory: ${{ EXT_DIR }}
+    working-directory: ./src
 
 on:
   push:
@@ -43,8 +43,8 @@ jobs:
       - uses: actions/cache@v2
         id: cache-id
         with:
-          path: ${{ EXT_DIR }}
-          key: ${{ GITHUB_SHA }}
+          path: $EXT_DIR
+          key: $GITHUB_SHA
           node-version: 'lts/*'
           cache: npm
           cache-dependency-path: "${GITHUB_WORKSPACE}/package-lock.json"
