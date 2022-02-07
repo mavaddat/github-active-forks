@@ -76,7 +76,7 @@ jobs:
           echo ${{ env.PUBLIC_KEY_BASE64 }} | base64 --decode > $pub
           # zip up the crx dir
           cwd=$(pwd -P)
-          (cd "$EXT_DIR" && zip -qr -9 -X "$cwd/$zip" .)
+          (zip -qr -9 -X "$cwd/$zip" .)
 
           # signature
           openssl sha1 -sha1 -binary -sign "$key" < "$zip" > "$sig"
@@ -115,15 +115,15 @@ jobs:
         run: npm ci || npm install
       - run: npm run build --if-present
       - name: Update extension’s meta
-        run: npx dot-json@1 $EXT_DIR/manifest.json version ${{ needs.Version.outputs.version }}
+        run: npx dot-json@1 manifest.json version ${{ needs.Version.outputs.version }}
       - name: Submit
         run: |
           case ${{ matrix.command }} in
             chrome)
-              cd $EXT_DIR && npx chrome-webstore-upload-cli@2 upload --auto-publish
+              npx chrome-webstore-upload-cli@2 upload --auto-publish
               ;;
             firefox)
-              cd $EXT_DIR && npx web-ext-submit@6
+              npx web-ext-submit@6
               ;;
           esac
         env:
